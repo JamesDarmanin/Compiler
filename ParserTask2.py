@@ -1,186 +1,173 @@
-import LexerTask1 as lex
 import astnodes as ast
+import LexerTask1 as lex
 
 class Parser:
-    def __init__(self, file_path):
+    def __init__(self, src_program_str):
+        self.name = "PARSEAR"
         self.lexer = lex.Lexer()
-        self.tokens = self.lexer.GenerateTokensFromFile(file_path)
-        self.idx = -1
+        self.tokens = self.lexer.GenerateTokens(src_program_str)
+        self.index = 0
+        self.crtToken = self.tokens[0] if self.tokens else lex.Token(lex.TokenType.end, "END")
 
-    def next_token(self):
-        self.idx += 1
-        if self.idx < len(self.tokens):
-            return self.tokens[self.idx]
-        else:
-            return lex.Token(lex.TokenType.end, "")
-
-    def peek_token(self):
-        next_idx = self.idx + 1
-        if next_idx < len(self.tokens):
-            return self.tokens[next_idx]
-        else:
-            return lex.Token(lex.TokenType.end, "")
-
-    def consume_token(self):
-        self.idx += 1
-
-    def parse_primary_expression(self):
-        token = self.next_token()
-        if token.type in [lex.TokenType.integer_literal, lex.TokenType.float_literal]:
-            self.consume_token()
-            return ast.ASTIntegerNode(token.lexeme)  # Handle float if necessary
-        elif token.type == lex.TokenType.identifier:
-            self.consume_token()
-            return ast.ASTVariableNode(token.lexeme)
-        elif token.type == lex.TokenType.open_par:
-            expr = self.parse_expression()
-            if self.peek_token().type == lex.TokenType.close_par:
-                self.consume_token()
-                return expr
+    def NextToken(self):
+        # Skip whitespace automatically
+        while True:
+            self.index += 1
+            if self.index < len(self.tokens):
+                self.crtToken = self.tokens[self.index]
+                if self.crtToken.type != lex.TokenType.whitespace:
+                    break
             else:
-                print("Syntax Error: Missing closing parenthesis")
-                return None
-        else:
-            print("Syntax Error: Unexpected token in primary expression")
-            return None
+                self.crtToken = lex.Token(lex.TokenType.end, "END")
+                break
 
-    def parse_factor(self):
-        left_expr = self.parse_primary_expression()
-        while self.peek_token().type in [lex.TokenType.MultiplicativeOp]:
-            operator = self.next_token().lexeme
-            self.consume_token()
-            right_expr = self.parse_primary_expression()
-            left_expr = ast.ASTBinaryOperationNode(operator, left_expr, right_expr)
-        return left_expr
+    def ParseExpression(self):
+        if self.crtToken.type == lex.TokenType.integer_literal:
+            value = self.crtToken.lexeme
+            self.NextToken()
+            return ast.ASTIntegerNode(value)
+        # Extend this method to handle more complex expressions
 
-    def parse_term(self):
-        left_expr = self.parse_factor()
-        while self.peek_token().type in [lex.TokenType.AdditiveOp]:
-            operator = self.next_token().lexeme
-            self.consume_token()
-            right_expr = self.parse_factor()
-            left_expr = ast.ASTBinaryOperationNode(operator, left_expr, right_expr)
-        return left_expr
-
-    def parse_comparison(self):
-        left_expr = self.parse_term()
-        while self.peek_token().type in [lex.TokenType.RelationalOp]:
-            operator = self.next_token().lexeme
-            self.consume_token()
-            right_expr = self.parse_term()
-            left_expr = ast.ASTBinaryOperationNode(operator, left_expr, right_expr)
-        return left_expr
-
-    def parse_expression(self):
-        return self.parse_comparison()
-
-    def parse_assignment(self):
-        initial_token = self.next_token()
-
-        if initial_token.type != lex.TokenType.identifier:
-            print("Syntax Error: Identifier expected for assignment")
-            return None
-
-        assignment_lhs = ast.ASTVariableNode(initial_token.lexeme)
-        self.consume_token()
-
-        if self.next_token().type != lex.TokenType.equal:
-            print("Syntax Error: '=' expected after identifier")
-            return None
-        self.consume_token()
-
-        assignment_rhs = self.parse_expression()
-        if assignment_rhs is None:
-            print("Syntax Error: Invalid expression in assignment")
-            return None
-
-        # Handle type checking or conversion if necessary
-        if isinstance(assignment_lhs, ast.ASTVariableNode) and initial_token.lexeme.startswith('int'):
-            if isinstance(assignment_rhs, ast.ASTFloatNode):
-                print("Type Warning: Converting float to int for assignment")
-                assignment_rhs = ast.ASTIntegerNode(int(float(assignment_rhs.value)))
-            elif not isinstance(assignment_rhs, ast.ASTIntegerNode):
-                print("Type Error: Expected integer value for int variable")
-                return None
-
+    def ParseAssignment(self):
+        assignment_lhs = ast.ASTVariableNode(self.crtToken.lexeme)
+        self.NextToken()  # consume the identifier
+        if self.crtToken.type != lex.TokenType.equal:
+            raise SyntaxError("Expected '=' in assignment")
+        self.NextToken()  # consume '='
+        assignment_rhs = self.ParseExpression()  # parse the right-hand side expression
         return ast.ASTAssignmentNode(assignment_lhs, assignment_rhs)
 
-    def parse_if_statement(self):
-        self.consume_token()  # Consume 'if'
-        condition = self.parse_expression()
-        if self.next_token().type != lex.TokenType.then:
-            print("Syntax Error: 'then' expected")
-            return None
-        self.consume_token()  # Consume 'then'
-        then_block = self.parse_block()
+    def ParseTypeDeclaration(self):
+        # Assuming the current token is the type
+        type_name = self.crtToken.lexeme  # 'int', 'float', etc.
+        self.NextToken()  # Move to the next token, which should be the identifier (variable name)
 
-        else_block = None
-        if self.next_token().type == lex.TokenType.else_keyword:
-            self.consume_token()  # Consume 'else'
-            else_block = self.parse_block()
+        if self.crtToken.type != lex.TokenType.identifier:
+            raise SyntaxError("Expected identifier after type name")
 
-        return ast.ASTIfNode(condition, then_block, else_block)
+        variable_name = self.crtToken.lexeme
+        self.NextToken()  # Move past the variable name
 
-    def parse_while_statement(self):
-        self.consume_token()  # Consume 'while'
-        condition = self.parse_expression()
-        if self.next_token().type != lex.TokenType.do:
-            print("Syntax Error: 'do' expected")
-            return None
-        self.consume_token()  # Consume 'do'
-        body = self.parse_block()
+        # Check if there is an initialization
+        initializer = None
+        if self.crtToken.type == lex.TokenType.equal:
+            self.NextToken()  # Consume the '='
+            initializer = self.ParseExpression()  # Parse the initialization expression
+
+        # Create a type declaration node
+        return ast.ASTTypeDeclarationNode(type_name, variable_name, initializer)
+
+    def ParseIfStatement(self):
+        self.NextToken()  # consume 'if'
+        condition = self.ParseExpression()  # Directly parse the condition
+        true_branch = self.ParseStatement()  # Parse the statement that executes if the condition is true
+        return ast.ASTIfNode(condition, true_branch)
+
+    def ParseWhileStatement(self):
+        self.NextToken()  # consume 'while'
+        condition = self.ParseExpression()  # Directly parse the condition
+        body = self.ParseStatement()  # Parse the body of the while loop
         return ast.ASTWhileNode(condition, body)
 
-    def parse_return_statement(self):
-        self.consume_token()  # Consume 'return'
-        expression = self.parse_expression()  # Parse the expression to return
-        if expression is None:
-            print("Syntax Error: Invalid expression in return statement")
-            return None
-        return ast.ASTReturnNode(expression)  # Return a node representing the return statement
+    def ParseForStatement(self):
+        self.NextToken()  # consume 'for'
+        condition = self.ParseExpression()  # Directly parse the condition
+        body = self.ParseStatement()  # Parse the body of the loop
+        return ast.ASTForNode(condition, body)
 
-    def parse_statement(self):
-        next_token = self.peek_token()  # Look at the next token to decide the parsing strategy
-        if next_token.type == lex.TokenType.if_keyword:
-            self.consume_token()  # consume 'if'
-            return self.parse_if_statement()
-        elif next_token.type == lex.TokenType.while_keyword:
-            self.consume_token()  # consume 'while'
-            return self.parse_while_statement()
-        elif next_token.type == lex.TokenType.return_keyword:
-            self.consume_token()  # consume 'return'
-            return self.parse_return_statement()
-        elif next_token.type == lex.TokenType.identifier:
-            return self.parse_assignment()
+    def ParseReturnStatement(self):
+        self.NextToken()  # consume 'return'
+        expression = self.ParseExpression()  # Directly parse the expression to return
+        return ast.ASTReturnNode(expression)
+
+    def ParseElseStatement(self):
+        self.NextToken()  # consume 'else'
+        body = self.ParseStatement()  # Directly parse the else body
+        return ast.ASTElseNode(body)
+
+    def ParseLetStatement(self):
+        self.NextToken()  # consume 'let'
+        identifier = self.ParseExpression()  # Assume the first expression is an identifier or similar
+        body = self.ParseStatement()  # Parse the statement to execute
+        return ast.ASTLetNode(identifier, body)
+
+    def ParseAsStatement(self):
+        self.NextToken()  # consume 'as'
+        identifier = self.ParseExpression()  # Assume the first expression is an identifier or similar
+        body = self.ParseStatement()  # Parse the body that follows
+        return ast.ASTAsNode(identifier, body)
+
+    def ParseStatement(self):
+        if self.crtToken.type == lex.TokenType.Keyword:
+            if self.crtToken.lexeme == "if":
+                return self.ParseIfStatement()
+            elif self.crtToken.lexeme == "while":
+                return self.ParseWhileStatement()
+            elif self.crtToken.lexeme == "for":
+                return self.ParseForStatement()
+            elif self.crtToken.lexeme == "return":
+                return self.ParseReturnStatement()
+            elif self.crtToken.lexeme == "else":
+                return self.ParseElseStatement()
+            elif self.crtToken.lexeme == "let":
+                return self.ParseLetStatement()
+            elif self.crtToken.lexeme == "as":
+                return self.ParseAsStatement()
+            else:
+                raise SyntaxError(f"Syntax Error: Unrecognized keyword '{self.crtToken.lexeme}'")
+        elif self.crtToken.type == lex.TokenType.open_par:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.close_par:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.open_bracket:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.close_bracket:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.open_square_bracket:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.close_square_bracket:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.open_curly:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.close_curly:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.comma:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.colon:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.semicolon:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.AdditiveOp:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.MultiplicativeOp:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.RelationalOp:
+            return self.ParseAssignment()
+        elif self.crtToken.type == lex.TokenType.identifier:
+            return self.ParseAssignment()
         else:
-            print("Syntax Error: Unexpected token in statement")
-            return None
+            raise SyntaxError("Syntax Error: Unrecognized statement start")
 
-    def parse_block(self):
+    def ParseBlock(self):
         block = ast.ASTBlockNode()
-        while self.idx < len(self.tokens) and self.tokens[self.idx].type != lex.TokenType.end:
-            statement = self.parse_statement()
-            if statement:
-                block.add_statement(statement)
-                if self.next_token().type == lex.TokenType.semicolon:
-                    self.consume_token()
-                else:
-                    print("Syntax Error: Missing semicolon")
-                    break
+        while self.crtToken.type != lex.TokenType.end and self.crtToken.type != lex.TokenType.close_curly:
+            statement = self.ParseStatement()
+            block.add_statement(statement)
+            if self.crtToken.type == lex.TokenType.semicolon:
+                self.NextToken()
+            else:
+                raise SyntaxError("Expected ';' after statement")
         return block
 
-    def parse_program(self):
-        self.consume_token()  # Move to the first token
-        return self.parse_block()
+    def ParseProgram(self):
+        return self.ParseBlock()
 
-    def parse(self):
-        return self.parse_program()
+    def Parse(self):
+        self.ParseProgram()  # start the parsing process
 
-    # Usage
-file_path = "ExampleForTasks"
-parser = Parser(file_path)
-ast_root = parser.parse()
+# Assuming the correct setup of lexer and AST nodes
+parser = Parser("int")
+parser.Parse()
 
-# Printing the AST
 print_visitor = ast.PrintNodesVisitor()
-ast_root.accept(print_visitor)
+parser.ASTroot.accept(print_visitor)
